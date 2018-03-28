@@ -966,9 +966,10 @@ static void queue_server(int which, char *msg, int len)
   if (serv < 0)
     return;
 
-  if (len > 511)
+  if (len > 511) {
     queue_server_large(which, msg, len);
     return;
+  }
 
   /* Remove \r\n. We will add these back when we send the text to the server.
    * - Wcc [01/09/2004]
