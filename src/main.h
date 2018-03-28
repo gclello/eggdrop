@@ -152,4 +152,6 @@ extern struct dcc_table DCC_CHAT, DCC_BOT, DCC_LOST, DCC_SCRIPT, DCC_BOT_NEW,
 
 #define EGG_AC_ARGS EGG_MACRO_STR(EGG_AC_ARGS_RAW)
 
+#define LARGE_BUFFER_LEN 16384
+
 #endif /* _EGG_MAIN_H */

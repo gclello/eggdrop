@@ -47,6 +47,7 @@
 #undef feof
 #undef user_malloc
 #undef dprintf
+#undef dprintflarge
 #undef get_data_ptr
 #undef wild_match
 #undef wild_match_per
@@ -182,6 +183,7 @@
 /* 68 - 71 */
 #define shareout (*(Function *)(global[68]))
 #define dprintf (global[69])
+#define dprintflarge (global[303])
 #define chatout (global[70])
 #define chanout_but ((void(*)())global[71])
 /* 72 - 75 */

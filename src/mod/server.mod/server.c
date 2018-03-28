@@ -786,6 +786,173 @@ static void empty_msgq()
   burst = 0;
 }
 
+/* Queues outgoing large messages so there's no flooding.
+ */
+void queue_server_large(int which, char *msg, int len)
+{
+  struct msgq_head *h = NULL, tempq;
+  struct msgq *q, *tq, *tqq;
+  int doublemsg = 0, qnext = 0;
+  char buf[LARGE_BUFFER_LEN - 1];
+
+  /* Don't even BOTHER if there's no server online. */
+  if (serv < 0)
+    return;
+
+  /* Remove \r\n. We will add these back when we send the text to the server.
+   * - Wcc [01/09/2004]
+   */
+  strncpy(buf, msg, sizeof buf);
+  msg = buf;
+  remove_crlf(&msg);
+  buf[LARGE_BUFFER_LEN - 2] = 0;
+  len = strlen(buf);
+
+  /* No queue for PING and PONG - drummer */
+  if (!egg_strncasecmp(buf, "PING", 4) || !egg_strncasecmp(buf, "PONG", 4)) {
+    if (buf[1] == 'I' || buf[1] == 'i')
+      lastpingtime = now;
+    check_tcl_out(which, buf, 1);
+    write_to_server(buf, len);
+    if (raw_log)
+      putlog(LOG_SRVOUT, "*", "[m->] %s", buf);
+    return;
+  }
+
+  switch (which) {
+  case DP_MODE_NEXT:
+    qnext = 1;
+    /* Fallthrough */
+
+  case DP_MODE:
+    h = &modeq;
+    tempq = modeq;
+    if (double_mode)
+      doublemsg = 1;
+    break;
+
+  case DP_SERVER_NEXT:
+    qnext = 1;
+    /* Fallthrough */
+
+  case DP_SERVER:
+    h = &mq;
+    tempq = mq;
+    if (double_server)
+      doublemsg = 1;
+    break;
+
+  case DP_HELP_NEXT:
+    qnext = 1;
+    /* Fallthrough */
+
+  case DP_HELP:
+    h = &hq;
+    tempq = hq;
+    if (double_help)
+      doublemsg = 1;
+    break;
+
+  default:
+    putlog(LOG_MISC, "*", "Warning: queuing unknown type to server!");
+    return;
+  }
+
+  if (h->tot < maxqmsg) {
+    /* Don't queue msg if it's already queued?  */
+    if (!doublemsg) {
+      for (tq = tempq.head; tq; tq = tqq) {
+        tqq = tq->next;
+        if (!egg_strcasecmp(tq->msg, buf)) {
+          if (!double_warned) {
+            debug1("Message already queued; skipping: %s", buf);
+            double_warned = 1;
+          }
+          return;
+        }
+      }
+    }
+
+    if (check_tcl_out(which, buf, 0))
+      return; /* a Tcl proc requested not to send the message */
+
+    q = nmalloc(sizeof(struct msgq));
+
+    /* Insert into queue. */
+    if (qnext) {
+      q->next = h->head;
+      h->head = q;
+      if (!h->last)
+        h->last = q;
+    }
+    else {
+      q->next = NULL;
+      if (h->last)
+        h->last->next = q;
+      else
+        h->head = q;
+      h->last = q;
+    }
+
+    q->len = len;
+    q->msg = nmalloc(len + 1);
+    egg_memcpy(q->msg, buf, len);
+    q->msg[len] = 0;
+    h->tot++;
+    h->warned = 0;
+    double_warned = 0;
+
+    if (raw_log) {
+      switch (which) {
+      case DP_MODE:
+        putlog(LOG_SRVOUT, "*", "[!m] %s", buf);
+        break;
+      case DP_SERVER:
+        putlog(LOG_SRVOUT, "*", "[!s] %s", buf);
+        break;
+      case DP_HELP:
+        putlog(LOG_SRVOUT, "*", "[!h] %s", buf);
+        break;
+      case DP_MODE_NEXT:
+        putlog(LOG_SRVOUT, "*", "[!!m] %s", buf);
+        break;
+      case DP_SERVER_NEXT:
+        putlog(LOG_SRVOUT, "*", "[!!s] %s", buf);
+        break;
+      case DP_HELP_NEXT:
+        putlog(LOG_SRVOUT, "*", "[!!h] %s", buf);
+        break;
+      }
+    }
+  } else {
+    if (!h->warned) {
+      switch (which) {
+      case DP_MODE_NEXT:
+        /* Fallthrough */
+      case DP_MODE:
+        putlog(LOG_MISC, "*", "Warning: over maximum mode queue!");
+        break;
+
+      case DP_SERVER_NEXT:
+        /* Fallthrough */
+      case DP_SERVER:
+        putlog(LOG_MISC, "*", "Warning: over maximum server queue!");
+        break;
+
+      case DP_HELP_NEXT:
+        /* Fallthrough */
+      case DP_HELP:
+        putlog(LOG_MISC, "*", "Warning: over maximum help queue!");
+        break;
+      }
+    }
+    h->warned = 1;
+  }
+
+  if (which == DP_MODE || which == DP_MODE_NEXT)
+    deq_msg(); /* DP_MODE needs to be sent ASAP, flush if possible. */
+}
+
 /* Queues outgoing messages so there's no flooding.
  */
 static void queue_server(int which, char *msg, int len)
@@ -797,6 +964,10 @@ static void queue_server(int which, char *msg, int len)
 
   /* Don't even BOTHER if there's no server online. */
   if (serv < 0)
+    return;
+
+  if (len > 511)
+    queue_server_large(which, msg, len);
     return;
 
   /* Remove \r\n. We will add these back when we send the text to the server.

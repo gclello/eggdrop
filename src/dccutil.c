@@ -170,6 +170,33 @@ void dprintf EGG_VARARGS_DEF(int, arg1)
   dprint(idx, buf, len);
 }
 
+void dprintflarge EGG_VARARGS_DEF(int, arg1)
+{
+  char buf[LARGE_BUFFER_LEN];
+  char *format;
+  int idx, len;
+  va_list va;
+
+  idx = EGG_VARARGS_START(int, arg1, va);
+  format = va_arg(va, char *);
+
+  egg_vsnprintf(buf, LARGE_BUFFER_LEN - 1, format, va);
+  va_end(va);
+  /* We can not use the return value vsnprintf() to determine where
+   * to null terminate. The C99 standard specifies that vsnprintf()
+   * shall return the number of bytes that would be written if the
+   * buffer had been large enough, rather then -1.
+   */
+  /* We actually can, since if it's < 0 or >= sizeof(buf), we know it wrote
+   * sizeof(buf) bytes. But we're not doing that anyway.
+   */
+  buf[sizeof(buf) - 1] = 0;
+  len = strlen(buf);
+
+  /* Send it out */
+  dprint(idx, buf, len);
+}
+
 void dprint(int idx, char *buf, int len)
 {
   if (idx < 0) {

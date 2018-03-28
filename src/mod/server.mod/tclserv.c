@@ -82,6 +82,57 @@ static int tcl_putnow STDVAR
   return TCL_OK;
 }
 
+static int tcl_putnowlarge STDVAR
+{
+  int len;
+  char buf[LARGE_BUFFER_LEN], *p, *q, *r;
+
+  BADARGS(2, 3, " text ?options?");
+
+  if ((argc == 3) && egg_strcasecmp(argv[2], "-oneline")) {
+    Tcl_AppendResult(irp, "unknown putnow option: should be ",
+                     "-oneline", NULL);
+    return TCL_ERROR;
+  }
+  if (!serv) /* no server - no output */
+    return TCL_OK;
+
+  for (p = r = argv[1], q = buf; ; p++) {
+    if (*p && *p != '\r' && *p != '\n')
+      continue; /* look for message delimiters */
+    if (p == r) { /* empty message */
+      if (*p) {
+        r++;
+        continue;
+      } else
+        break;
+    }
+    if ((p - r) > (sizeof(buf) - 2 - (q - buf)))
+      break; /* That's all folks, no space left */
+    len = p - r + 1; /* leave space for '\0' */
+    strncpyz(q, r, len);
+    if (check_tcl_out(0, q, 0)) {
+      if (!*p || ((argc == 3) && !egg_strcasecmp(argv[2], "-oneline")))
+        break;
+      r = p + 1;
+      continue;
+    }
+    check_tcl_out(0, q, 1);
+    if (q == buf)
+      putlog(LOG_SRVOUT, "*", "[r->] %s", q);
+    else
+      putlog(LOG_SRVOUT, "*", "[+r->] %s", q);
+    q += len - 1; /* the '\0' must be overwritten */
+    *q++ = '\r';
+    *q++ = '\n'; /* comply with the RFC */
+    if (!*p || ((argc == 3) && !egg_strcasecmp(argv[2], "-oneline")))
+      break; /* cut on newline requested or message ended */
+    r = p + 1;
+  }
+  tputs(serv, buf, q - buf); /* q points after the last '\n' */
+  return TCL_OK;
+}
+
 static int tcl_putquick STDVAR
 {
   char s[511], *p;
@@ -135,6 +186,34 @@ static int tcl_putserv STDVAR
     dprintf(DP_SERVER_NEXT, "%s\n", s);
   else
     dprintf(DP_SERVER, "%s\n", s);
+  return TCL_OK;
+}
+
+static int tcl_putservlarge STDVAR
+{
+  char s[LARGE_BUFFER_LEN - 1], *p;
+
+  BADARGS(2, 3, " text ?options?");
+
+  if ((argc == 3) && egg_strcasecmp(argv[2], "-next") &&
+      egg_strcasecmp(argv[2], "-normal")) {
+    Tcl_AppendResult(irp, "unknown putserv option: should be one of: ",
+                     "-normal -next", NULL);
+    return TCL_ERROR;
+  }
+  strncpy(s, argv[1], LARGE_BUFFER_LEN - 2);
+
+  s[LARGE_BUFFER_LEN - 2] = 0;
+  p = strchr(s, '\n');
+  if (p != NULL)
+    *p = 0;
+  p = strchr(s, '\r');
+  if (p != NULL)
+    *p = 0;
+  if (argc == 3 && !egg_strcasecmp(argv[2], "-next"))
+    dprintflarge(DP_SERVER_NEXT, "%s\n", s);
+  else
+    dprintflarge(DP_SERVER, "%s\n", s);
   return TCL_OK;
 }
 
@@ -313,13 +392,15 @@ static int tcl_queuesize STDVAR
 }
 
 static tcl_cmds my_tcl_cmds[] = {
-  {"jump",       tcl_jump},
-  {"isbotnick",  tcl_isbotnick},
-  {"clearqueue", tcl_clearqueue},
-  {"queuesize",  tcl_queuesize},
-  {"puthelp",    tcl_puthelp},
-  {"putserv",    tcl_putserv},
-  {"putquick",   tcl_putquick},
-  {"putnow",     tcl_putnow},
-  {NULL,         NULL}
+  {"jump",         tcl_jump},
+  {"isbotnick",    tcl_isbotnick},
+  {"clearqueue",   tcl_clearqueue},
+  {"queuesize",    tcl_queuesize},
+  {"puthelp",      tcl_puthelp},
+  {"putserv",      tcl_putserv},
+  {"putquick",     tcl_putquick},
+  {"putnow",       tcl_putnow},
+  {"putnowlarge",  tcl_putnowlarge},
+  {"putservlarge", tcl_putservlarge},
+  {NULL          , NULL}
 };
