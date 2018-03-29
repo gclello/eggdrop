@@ -788,7 +788,7 @@ static void empty_msgq()
 
 /* Queues outgoing large messages so there's no flooding.
  */
-void queue_server_large(int which, char *msg, int len)
+static void queue_server_large(int which, char *msg, int len)
 {
   struct msgq_head *h = NULL, tempq;
   struct msgq *q, *tq, *tqq;
